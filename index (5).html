@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ID Premium - ของแทร่โทนขาว</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.1.3/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.1.3/firebase-database-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;700&display=swap');
+        body { font-family: 'Kanit', sans-serif; background-color: #fcfcfc; }
+        .white-card { background: #ffffff; border: 1px solid #eeeeee; box-shadow: 0 10px 30px rgba(0,0,0,0.03); }
+        .btn-gradient { background: linear-gradient(135deg, #3b82f6 0%, #2dd4bf 100%); transition: all 0.3s; }
+        .btn-gradient:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(59, 130, 246, 0.3); }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div id="userSection" class="min-h-screen flex flex-col items-center justify-center p-6">
+        <div class="max-w-md w-full white-card rounded-3xl p-10 text-center">
+            <h1 class="text-4xl font-bold mb-2 tracking-tight text-slate-900">ID SHOP</h1>
+            <p class="text-slate-400 text-sm mb-10 italic">Premium Game Account Services</p>
+
+            <div class="relative w-48 h-48 mx-auto mb-10 bg-slate-50 rounded-full flex items-center justify-center border-2 border-dashed border-slate-200">
+                <span id="spinIcon" class="text-6xl">🎁</span>
+            </div>
+
+            <div id="priceDisplay" class="mb-4 text-2xl font-bold text-blue-600">-- บาท</div>
+            
+            <button onclick="startRandom()" id="btnSpin" class="w-full btn-gradient text-white py-4 rounded-2xl font-bold text-xl mb-6">
+                กดสุ่มรหัส
+            </button>
+
+            <div id="result" class="hidden animate-bounce mt-4 p-4 bg-green-50 text-green-600 rounded-xl border border-green-100 font-bold">
+                ยินดีด้วย! คุณได้รับ: <span id="prizeText"></span>
+            </div>
+
+            <button onclick="openAdmin()" class="mt-8 text-slate-300 text-xs hover:text-blue-400 transition">จัดการหลังบ้าน</button>
+        </div>
+    </div>
+
+    <div id="adminSection" class="hidden min-h-screen bg-white p-6 md:p-12">
+        <div class="max-w-4xl mx-auto">
+            <div class="flex justify-between items-center mb-10 border-b pb-6">
+                <h2 class="text-3xl font-bold">Dashboard หลังบ้าน</h2>
+                <button onclick="closeAdmin()" class="bg-slate-100 px-6 py-2 rounded-xl">ปิด</button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div class="white-card p-6 rounded-2xl">
+                    <h3 class="font-bold mb-4 text-blue-600">⚙️ ตั้งค่าร้านค้า</h3>
+                    <label class="block text-xs mb-1">ราคาต่อครั้ง</label>
+                    <input id="setPrice" type="number" class="w-full bg-slate-50 p-3 rounded-lg mb-4 border border-slate-100">
+                    
+                    <label class="block text-xs mb-1">รหัสผ่าน Admin</label>
+                    <input id="setAdminPass" type="text" class="w-full bg-slate-50 p-3 rounded-lg mb-4 border border-slate-100">
+                    
+                    <button onclick="saveSettings()" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold">บันทึกการตั้งค่า</button>
+                </div>
+
+                <div class="white-card p-6 rounded-2xl">
+                    <h3 class="font-bold mb-4 text-green-600">📦 เติมของ & ปรับโอกาส (%)</h3>
+                    <input id="newAcc" type="text" placeholder="User:Pass" class="w-full bg-slate-50 p-3 rounded-lg mb-2 border border-slate-100">
+                    <input id="newChance" type="number" placeholder="โอกาสสุ่มได้ (0-100)" class="w-full bg-slate-50 p-3 rounded-lg mb-4 border border-slate-100">
+                    <button onclick="addStock()" class="w-full bg-green-600 text-white py-3 rounded-xl font-bold">เพิ่มลงคลัง</button>
+                </div>
+            </div>
+
+            <div class="mt-10 white-card rounded-2xl overflow-hidden">
+                <table class="w-full text-left border-collapse">
+                    <thead class="bg-slate-50 border-b">
+                        <tr>
+                            <th class="p-4">ไอดี</th>
+                            <th class="p-4">โอกาส (%)</th>
+                            <th class="p-4">จัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stockTable"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- ส่วนที่ 1: ตั้งค่า Firebase (เอาค่าจาก Firebase Console มาใส่ตรงนี้) ---
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT.firebaseapp.com",
+            databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+            projectId: "YOUR_PROJECT",
+            storageBucket: "YOUR_PROJECT.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // --- ส่วนที่ 2: ฟังก์ชันการทำงาน ---
+        let shopSettings = {};
+        let stockItems = [];
+
+        // โหลดข้อมูลจากหลังบ้าน
+        db.ref('settings').on('value', (snap) => {
+            shopSettings = snap.val() || { price: 129, adminPass: "1234" };
+            document.getElementById('priceDisplay').innerText = `${shopSettings.price} บาท`;
+            document.getElementById('setPrice').value = shopSettings.price;
+            document.getElementById('setAdminPass').value = shopSettings.adminPass;
+        });
+
+        db.ref('stock').on('value', (snap) => {
+            const data = snap.val();
+            stockItems = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+            renderTable();
+        });
+
+        function renderTable() {
+            const table = document.getElementById('stockTable');
+            table.innerHTML = stockItems.map(item => `
+                <tr class="border-b">
+                    <td class="p-4 font-mono text-sm">${item.data}</td>
+                    <td class="p-4">${item.chance}%</td>
+                    <td class="p-4 text-red-500 cursor-pointer" onclick="deleteItem('${item.id}')">ลบ</td>
+                </tr>
+            `).join('');
+        }
+
+        function addStock() {
+            const data = document.getElementById('newAcc').value;
+            const chance = parseInt(document.getElementById('newChance').value);
+            if (data && chance) {
+                db.ref('stock').push({ data, chance });
+                document.getElementById('newAcc').value = '';
+                document.getElementById('newChance').value = '';
+            }
+        }
+
+        function deleteItem(id) {
+            if(confirm('ลบไอดีนี้?')) db.ref('stock/' + id).remove();
+        }
+
+        function saveSettings() {
+            const price = document.getElementById('setPrice').value;
+            const adminPass = document.getElementById('setAdminPass').value;
+            db.ref('settings').set({ price, adminPass });
+            alert('บันทึกแล้ว!');
+        }
+
+        // --- ระบบสุ่มแบบถ่วงน้ำหนัก (Weighted Random) ---
+        function startRandom() {
+            if (stockItems.length === 0) return alert('ของหมด!');
+            
+            const btn = document.getElementById('btnSpin');
+            const icon = document.getElementById('spinIcon');
+            const resDiv = document.getElementById('result');
+            
+            btn.disabled = true;
+            icon.classList.add('animate-spin');
+            resDiv.classList.add('hidden');
+
+            setTimeout(() => {
+                // คำนวณโอกาสที่ปรับไว้
+                const totalWeight = stockItems.reduce((sum, item) => sum + item.chance, 0);
+                let random = Math.random() * totalWeight;
+                let selected = stockItems[0];
+
+                for (const item of stockItems) {
+                    if (random < item.chance) {
+                        selected = item;
+                        break;
+                    }
+                    random -= item.chance;
+                }
+
+                icon.classList.remove('animate-spin');
+                document.getElementById('prizeText').innerText = selected.data;
+                resDiv.classList.remove('hidden');
+                btn.disabled = false;
+            }, 2000);
+        }
+
+        function openAdmin() {
+            const pass = prompt("ใส่รหัสผ่านแอดมิน:");
+            if (pass === shopSettings.adminPass) {
+                document.getElementById('userSection').classList.add('hidden');
+                document.getElementById('adminSection').classList.remove('hidden');
+            } else {
+                alert("รหัสผิด!");
+            }
+        }
+
+        function closeAdmin() {
+            document.getElementById('adminSection').classList.add('hidden');
+            document.getElementById('userSection').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ID Premium - ของแทร่โทนขาว</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.1.3/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.1.3/firebase-database-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;700&display=swap');
+        body { font-family: 'Kanit', sans-serif; background-color: #fcfcfc; }
+        .white-card { background: #ffffff; border: 1px solid #eeeeee; box-shadow: 0 10px 30px rgba(0,0,0,0.03); }
+        .btn-gradient { background: linear-gradient(135deg, #3b82f6 0%, #2dd4bf 100%); transition: all 0.3s; }
+        .btn-gradient:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(59, 130, 246, 0.3); }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div id="userSection" class="min-h-screen flex flex-col items-center justify-center p-6">
+        <div class="max-w-md w-full white-card rounded-3xl p-10 text-center">
+            <h1 class="text-4xl font-bold mb-2 tracking-tight text-slate-900">ID SHOP</h1>
+            <p class="text-slate-400 text-sm mb-10 italic">Premium Game Account Services</p>
+
+            <div class="relative w-48 h-48 mx-auto mb-10 bg-slate-50 rounded-full flex items-center justify-center border-2 border-dashed border-slate-200">
+                <span id="spinIcon" class="text-6xl">🎁</span>
+            </div>
+
+            <div id="priceDisplay" class="mb-4 text-2xl font-bold text-blue-600">-- บาท</div>
+            
+            <button onclick="startRandom()" id="btnSpin" class="w-full btn-gradient text-white py-4 rounded-2xl font-bold text-xl mb-6">
+                กดสุ่มรหัส
+            </button>
+
+            <div id="result" class="hidden animate-bounce mt-4 p-4 bg-green-50 text-green-600 rounded-xl border border-green-100 font-bold">
+                ยินดีด้วย! คุณได้รับ: <span id="prizeText"></span>
+            </div>
+
+            <button onclick="openAdmin()" class="mt-8 text-slate-300 text-xs hover:text-blue-400 transition">จัดการหลังบ้าน</button>
+        </div>
+    </div>
+
+    <div id="adminSection" class="hidden min-h-screen bg-white p-6 md:p-12">
+        <div class="max-w-4xl mx-auto">
+            <div class="flex justify-between items-center mb-10 border-b pb-6">
+                <h2 class="text-3xl font-bold">Dashboard หลังบ้าน</h2>
+                <button onclick="closeAdmin()" class="bg-slate-100 px-6 py-2 rounded-xl">ปิด</button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div class="white-card p-6 rounded-2xl">
+                    <h3 class="font-bold mb-4 text-blue-600">⚙️ ตั้งค่าร้านค้า</h3>
+                    <label class="block text-xs mb-1">ราคาต่อครั้ง</label>
+                    <input id="setPrice" type="number" class="w-full bg-slate-50 p-3 rounded-lg mb-4 border border-slate-100">
+                    
+                    <label class="block text-xs mb-1">รหัสผ่าน Admin</label>
+                    <input id="setAdminPass" type="text" class="w-full bg-slate-50 p-3 rounded-lg mb-4 border border-slate-100">
+                    
+                    <button onclick="saveSettings()" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold">บันทึกการตั้งค่า</button>
+                </div>
+
+                <div class="white-card p-6 rounded-2xl">
+                    <h3 class="font-bold mb-4 text-green-600">📦 เติมของ & ปรับโอกาส (%)</h3>
+                    <input id="newAcc" type="text" placeholder="User:Pass" class="w-full bg-slate-50 p-3 rounded-lg mb-2 border border-slate-100">
+                    <input id="newChance" type="number" placeholder="โอกาสสุ่มได้ (0-100)" class="w-full bg-slate-50 p-3 rounded-lg mb-4 border border-slate-100">
+                    <button onclick="addStock()" class="w-full bg-green-600 text-white py-3 rounded-xl font-bold">เพิ่มลงคลัง</button>
+                </div>
+            </div>
+
+            <div class="mt-10 white-card rounded-2xl overflow-hidden">
+                <table class="w-full text-left border-collapse">
+                    <thead class="bg-slate-50 border-b">
+                        <tr>
+                            <th class="p-4">ไอดี</th>
+                            <th class="p-4">โอกาส (%)</th>
+                            <th class="p-4">จัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stockTable"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- ส่วนที่ 1: ตั้งค่า Firebase (เอาค่าจาก Firebase Console มาใส่ตรงนี้) ---
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT.firebaseapp.com",
+            databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+            projectId: "YOUR_PROJECT",
+            storageBucket: "YOUR_PROJECT.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // --- ส่วนที่ 2: ฟังก์ชันการทำงาน ---
+        let shopSettings = {};
+        let stockItems = [];
+
+        // โหลดข้อมูลจากหลังบ้าน
+        db.ref('settings').on('value', (snap) => {
+            shopSettings = snap.val() || { price: 129, adminPass: "1234" };
+            document.getElementById('priceDisplay').innerText = `${shopSettings.price} บาท`;
+            document.getElementById('setPrice').value = shopSettings.price;
+            document.getElementById('setAdminPass').value = shopSettings.adminPass;
+        });
+
+        db.ref('stock').on('value', (snap) => {
+            const data = snap.val();
+            stockItems = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+            renderTable();
+        });
+
+        function renderTable() {
+            const table = document.getElementById('stockTable');
+            table.innerHTML = stockItems.map(item => `
+                <tr class="border-b">
+                    <td class="p-4 font-mono text-sm">${item.data}</td>
+                    <td class="p-4">${item.chance}%</td>
+                    <td class="p-4 text-red-500 cursor-pointer" onclick="deleteItem('${item.id}')">ลบ</td>
+                </tr>
+            `).join('');
+        }
+
+        function addStock() {
+            const data = document.getElementById('newAcc').value;
+            const chance = parseInt(document.getElementById('newChance').value);
+            if (data && chance) {
+                db.ref('stock').push({ data, chance });
+                document.getElementById('newAcc').value = '';
+                document.getElementById('newChance').value = '';
+            }
+        }
+
+        function deleteItem(id) {
+            if(confirm('ลบไอดีนี้?')) db.ref('stock/' + id).remove();
+        }
+
+        function saveSettings() {
+            const price = document.getElementById('setPrice').value;
+            const adminPass = document.getElementById('setAdminPass').value;
+            db.ref('settings').set({ price, adminPass });
+            alert('บันทึกแล้ว!');
+        }
+
+        // --- ระบบสุ่มแบบถ่วงน้ำหนัก (Weighted Random) ---
+        function startRandom() {
+            if (stockItems.length === 0) return alert('ของหมด!');
+            
+            const btn = document.getElementById('btnSpin');
+            const icon = document.getElementById('spinIcon');
+            const resDiv = document.getElementById('result');
+            
+            btn.disabled = true;
+            icon.classList.add('animate-spin');
+            resDiv.classList.add('hidden');
+
+            setTimeout(() => {
+                // คำนวณโอกาสที่ปรับไว้
+                const totalWeight = stockItems.reduce((sum, item) => sum + item.chance, 0);
+                let random = Math.random() * totalWeight;
+                let selected = stockItems[0];
+
+                for (const item of stockItems) {
+                    if (random < item.chance) {
+                        selected = item;
+                        break;
+                    }
+                    random -= item.chance;
+                }
+
+                icon.classList.remove('animate-spin');
+                document.getElementById('prizeText').innerText = selected.data;
+                resDiv.classList.remove('hidden');
+                btn.disabled = false;
+            }, 2000);
+        }
+
+        function openAdmin() {
+            const pass = prompt("ใส่รหัสผ่านแอดมิน:");
+            if (pass === shopSettings.adminPass) {
+                document.getElementById('userSection').classList.add('hidden');
+                document.getElementById('adminSection').classList.remove('hidden');
+            } else {
+                alert("รหัสผิด!");
+            }
+        }
+
+        function closeAdmin() {
+            document.getElementById('adminSection').classList.add('hidden');
+            document.getElementById('userSection').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
